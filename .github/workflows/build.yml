@@ -24,13 +24,15 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: 8.7
-
-      - name: Build debug APK
+      - name: Make gradlew executable & Build APK
         working-directory: SmartGallery
-        run: gradle :app:assembleDebug --no-daemon
+        run: |
+          chmod +x gradlew || true
+          if [ -f "./gradlew" ]; then
+            ./gradlew assembleDebug --no-daemon
+          else
+            gradle assembleDebug --no-daemon
+          fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -38,4 +40,5 @@ jobs:
           name: SmartGallery-debug
           path: SmartGallery/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          
           
