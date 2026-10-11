@@ -14,31 +14,38 @@ jobs:
 
       - name: Unzip project
         run: |
+          echo "Listing root directory files:"
+          ls -la
           test -f SmartGallery.zip
           unzip -q SmartGallery.zip
-          test -f SmartGallery/settings.gradle.kts
-          ls -a SmartGallery
+          echo "Listing directory contents after unzip:"
+          ls -la
 
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
-      - name: Make gradlew executable & Build APK
-        working-directory: SmartGallery
+      - name: Find project directory and build APK
         run: |
-          chmod +x gradlew || true
+          TARGET_DIR=$(find . -maxdepth 3 -name "build.gradle*" -exec dirname {} \; | head -n 1)
+          if [ -z "$TARGET_DIR" ]; then
+            TARGET_DIR=$(find . -maxdepth 3 -name "settings.gradle*" -exec dirname {} \; | head -n 1)
+          fi
+          echo "Found target project directory: $TARGET_DIR"
+          cd "$TARGET_DIR"
+          
           if [ -f "./gradlew" ]; then
+            chmod +x gradlew
             ./gradlew assembleDebug --no-daemon
           else
             gradle assembleDebug --no-daemon
           fi
 
-      - name: Upload APK
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: SmartGallery-debug
-          path: SmartGallery/app/build/outputs/apk/debug/app-debug.apk
+          path: '**/app/build/outputs/apk/debug/app-debug.apk'
           if-no-files-found: error
-          
           
