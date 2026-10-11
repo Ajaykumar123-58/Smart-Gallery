@@ -12,39 +12,68 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Unzip project
+      - name: Unzip project (SmartGallery.zip -> SmartGallery/)
         run: |
-          echo "Listing root directory files:"
-          ls -la
           test -f SmartGallery.zip
           unzip -q SmartGallery.zip
-          echo "Listing directory contents after unzip:"
-          ls -la
+          test -f SmartGallery/settings.gradle.kts
+          ls -a SmartGallery
 
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
-      - name: Find project directory and build APK
-        run: |
-          TARGET_DIR=$(find . -maxdepth 3 -name "build.gradle*" -exec dirname {} \; | head -n 1)
-          if [ -z "$TARGET_DIR" ]; then
-            TARGET_DIR=$(find . -maxdepth 3 -name "settings.gradle*" -exec dirname {} \; | head -n 1)
-          fi
-          echo "Found target project directory: $TARGET_DIR"
-          cd "$TARGET_DIR"
-          
-          if [ -f "./gradlew" ]; then
-            chmod +x gradlew
-            ./gradlew assembleDebug --no-daemon
-          else
-            gradle assembleDebug --no-daemon
-          fi
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
 
-      - name: Upload APK Artifact
+      # Tests must not block the APK; their result is shown in the Summary.
+      - name: Unit tests
+        id: tests
+        continue-on-error: true
+        working-directory: SmartGallery
+        run: |
+          set -o pipefail
+          gradle :app:testDebugUnitTest --stacktrace 2>&1 | tee ../test.log
+
+      - name: Build debug APK
+        working-directory: SmartGallery
+        run: |
+          set -o pipefail
+          gradle :app:assembleDebug --stacktrace 2>&1 | tee ../build.log
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SmartGallery-debug
-          path: '**/app/build/outputs/apk/debug/app-debug.apk'
+          name: SmartGallery-debug-apk
+          path: SmartGallery/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+      - name: Show errors in Summary
+        if: always()
+        run: |
+          {
+            echo "## Result summary"
+            echo "Unit tests: ${{ steps.tests.outcome }}"
+            for f in build.log test.log; do
+              if [ -f "$f" ]; then
+                echo "### Errors from $f"
+                echo '```'
+                grep -nE "^e: |Unresolved reference|Execution failed|What went wrong|FAILED|Could not (resolve|find|determine)|error:" "$f" | head -40 || true
+                sed -n '/What went wrong/,/^\* Try/p' "$f" | head -30
+                echo '```'
+              fi
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload full logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            build.log
+            test.log
+            SmartGallery/app/build/reports/
+          if-no-files-found: ignore
